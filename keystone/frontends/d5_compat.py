@@ -45,15 +45,7 @@ import json
 from lxml import etree
 import os
 import sys
-
 from webob.exc import Request
-
-POSSIBLE_TOPDIR = os.path.normpath(os.path.join(os.path.abspath(sys.argv[0]),
-                                   os.pardir,
-                                   os.pardir,
-                                   os.pardir))
-if os.path.exists(os.path.join(POSSIBLE_TOPDIR, 'keystone', '__init__.py')):
-    sys.path.insert(0, POSSIBLE_TOPDIR)
 
 from keystone.logic.types import fault
 import keystone.utils as utils
@@ -247,9 +239,10 @@ class D5toDiabloAuthData(object):
             else:
                 raise fault.IdentityFault("%s not initialized with data" % \
                                           self.__class__.__str__)
-        d5_data = {"auth": {}}
-        for key, value in self.json.iteritems():
-            d5_data["auth"][key] = value
+        d5_data = {"auth": self.json.copy()}
+        d5_data['auth']['serviceCatalog'] = \
+            dict([(s['type'], s['endpoints'])
+                   for s in d5_data['auth']['serviceCatalog']])
 
         return json.dumps(d5_data)
 

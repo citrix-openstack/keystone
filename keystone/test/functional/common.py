@@ -661,10 +661,11 @@ class FunctionalTestCase(ApiTestCase):
         data = {
             "auth": {
                 "token": {
-                "id": token,
-                }}}
+                    "id": token}}}
+
         if tenant_id:
             data["auth"]["tenantId"] = tenant_id
+
         return self.post_token(as_json=data, **kwargs)
 
     def validate_token(self, token_id=None, tenant_id=None, **kwargs):
@@ -683,6 +684,10 @@ class FunctionalTestCase(ApiTestCase):
 
     def create_tenant(self, tenant_name=None, tenant_description=None,
             tenant_enabled=True, **kwargs):
+        """Creates a tenant for testing
+
+        The tenant name and description are generated from UUIDs.
+        """
         tenant_name = optional_str(tenant_name)
         tenant_description = optional_str(tenant_description)
 
@@ -736,6 +741,10 @@ class FunctionalTestCase(ApiTestCase):
 
     def create_user(self, user_name=None, user_password=None, user_email=None,
             tenant_id=None, user_enabled=True, **kwargs):
+        """Creates a user for testing
+
+        The user name is generated from UUIDs.
+        """
         user_name = optional_str(user_name)
         user_password = optional_str(user_password)
         user_email = optional_email(user_email)
@@ -846,6 +855,10 @@ class FunctionalTestCase(ApiTestCase):
 
     def create_role(self, role_name=None, role_description=None,
             service_id=None, **kwargs):
+        """Creates a role for testing
+
+        The role name and description are generated from UUIDs.
+        """
         role_name = optional_str(role_name)
         role_description = optional_str(role_description)
 

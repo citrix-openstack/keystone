@@ -85,12 +85,12 @@ if '--trace-calls' in sys.argv:
             return
         if func_filename.startswith("/Library"):
             return
+        if func_filename.startswith("/usr/lib/py"):
+            return
         if 'macosx' in func_filename:
             return
         func_line_no = frame.f_lineno
-        # If ../../keystone/__init__.py exists, add ../ to Python search path,
-        # so that it will override what happens to be installed in
-        # /usr/(local/)lib/python...
+        # Calculate root project path
         possible_topdir = os.path.normpath(os.path.join(
                                            os.path.abspath(sys.argv[0]),
                                            os.pardir,

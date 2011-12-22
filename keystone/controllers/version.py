@@ -1,8 +1,7 @@
 import os
 from webob import Response
 
-# If ../../keystone/__init__.py exists, add ../ to Python search path, so that
-# it will override what happens to be installed in /usr/(local/)lib/python...
+# Calculate root path (to get to static files)
 possible_topdir = os.path.normpath(os.path.join(os.path.dirname(__file__),
                                                 os.pardir,
                                                 os.pardir))
@@ -26,6 +25,10 @@ class VersionController(wsgi.Controller):
             resp_file = os.path.join(possible_topdir,
                 "keystone/content/%s.xml.tpl" % file)
             resp.content_type = "application/xml"
+        elif utils.is_atom_response(req):
+            resp_file = os.path.join(possible_topdir,
+                "keystone/content/%s.atom.tpl" % file)
+            resp.content_type = "application/atom+xml"
         else:
             resp_file = os.path.join(possible_topdir,
                 "keystone/content/%s.json.tpl" % file)
