@@ -337,10 +337,10 @@ class AuthData(object):
             name=unicode(self.user.username))
         dom.append(user)
 
-        if self.user.role_refs != None:
+        if self.user.role_refs is not None:
             user.append(self.user.role_refs.to_dom())
 
-        if self.base_urls != None:
+        if self.base_urls is not None or len(self.base_urls) > 0:
             service_catalog = etree.Element("serviceCatalog")
             for key, key_base_urls in self.d.items():
                 dservice = db_api.SERVICE.get(key)
@@ -350,17 +350,29 @@ class AuthData(object):
                 service = etree.Element("service",
                                  name=dservice.name, type=dservice.type)
                 for base_url in key_base_urls:
+                    include_this_endpoint = False
                     endpoint = etree.Element("endpoint")
                     if base_url.region:
                         endpoint.set("region", base_url.region)
                     for url_kind in self.url_types:
                         base_url_item = getattr(base_url, url_kind + "_url")
                         if base_url_item:
-                            endpoint.set(url_kind + "URL", base_url_item.\
-                            replace('%tenant_id%', str(self.token.tenant.id))
-                            if self.token.tenant else base_url_item)
-                    service.append(endpoint)
-                service_catalog.append(service)
+                            if '%tenant_id%' in base_url_item:
+                                if self.token.tenant:
+                                    # Don't return tenant endpoints if token
+                                    # not scoped to a tenant
+                                    endpoint.set(url_kind + "URL",
+                                        base_url_item.replace('%tenant_id%',
+                                        str(self.token.tenant.id)))
+                                    include_this_endpoint = True
+                            else:
+                                endpoint.set(url_kind + "URL", base_url_item)
+                                include_this_endpoint = True
+                    if include_this_endpoint:
+                        endpoint.set("id", str(base_url.id))
+                        service.append(endpoint)
+                if service.find("endpoint") is not None:
+                    service_catalog.append(service)
             dom.append(service_catalog)
         return etree.tostring(dom)
 
@@ -387,31 +399,42 @@ class AuthData(object):
         if self.user.role_refs is not None:
             auth['user']["roles"] = self.user.role_refs.to_json_values()
 
-        if self.base_urls != None:
+        if self.base_urls is not None and len(self.base_urls) > 0:
             service_catalog = []
             for key, key_base_urls in self.d.items():
                 service = {}
                 endpoints = []
                 for base_url in key_base_urls:
+                    include_this_endpoint = False
                     endpoint = {}
                     if base_url.region:
                         endpoint["region"] = base_url.region
                     for url_kind in self.url_types:
                         base_url_item = getattr(base_url, url_kind + "_url")
                         if base_url_item:
-                            endpoint[url_kind + "URL"] = base_url_item.\
-                                replace('%tenant_id%',
-                                    str(self.token.tenant.id)) \
-                                if self.token.tenant else base_url_item
-                    endpoints.append(endpoint)
-                    dservice = db_api.SERVICE.get(key)
-                    if not dservice:
-                        raise fault.ItemNotFoundFault(
-                        "The service could not be found for" + str(key))
-                service["name"] = dservice.name
-                service["type"] = dservice.type
-                service["endpoints"] = endpoints
-                service_catalog.append(service)
+                            if '%tenant_id%' in base_url_item:
+                                if self.token.tenant:
+                                    # Don't return tenant endpoints if token
+                                    # not scoped to a tenant
+                                    endpoint[url_kind + "URL"] = \
+                                    base_url_item.replace('%tenant_id%',
+                                            str(self.token.tenant.id))
+                                    include_this_endpoint = True
+                            else:
+                                endpoint[url_kind + "URL"] = base_url_item
+                                include_this_endpoint = True
+                    if include_this_endpoint:
+                        endpoint['id'] = str(base_url.id)
+                        endpoints.append(endpoint)
+                        dservice = db_api.SERVICE.get(key)
+                        if not dservice:
+                            raise fault.ItemNotFoundFault(
+                            "The service could not be found for" + str(key))
+                if len(endpoints):
+                    service["name"] = dservice.name
+                    service["type"] = dservice.type
+                    service["endpoints"] = endpoints
+                    service_catalog.append(service)
             auth["serviceCatalog"] = service_catalog
         ret = {}
         ret["access"] = auth

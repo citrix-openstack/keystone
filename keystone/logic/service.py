@@ -216,6 +216,8 @@ def get_auth_data(dtoken):
         tenant = auth.Tenant(id=dtenant.id, name=dtenant.name)
 
         endpoints = api.TENANT.get_all_endpoints(dtoken.tenant_id)
+    else:
+        endpoints = api.TENANT.get_all_endpoints(None)
 
     token = auth.Token(dtoken.expires, dtoken.id, tenant)
 
@@ -372,8 +374,7 @@ class IdentityService(object):
         if not user:
             raise fault.UnauthorizedFault("Unauthorized")
 
-        return self._authenticate(
-            validate, user.id, auth_request.tenant_id)
+        return self._authenticate(validate, user.id, auth_request.tenant_id)
 
     def authenticate_with_unscoped_token(self, auth_request):
         # Check auth_with_unscoped_token
@@ -396,8 +397,7 @@ class IdentityService(object):
         def validate(duser):
             # The user is already authenticated
             return True
-        return self._authenticate(validate, user.id,
-                                             auth_request.tenant_id)
+        return self._authenticate(validate, user.id, auth_request.tenant_id)
 
     def authenticate_ec2(self, credentials):
         # Check credentials
@@ -515,12 +515,23 @@ class IdentityService(object):
         if is_service_operation:
             # Check regular token validity.
             (_token, user) = validate_token(admin_token, False)
+            scope = _token.tenant_id
+            default_tenant = user.tenant_id
 
-            # Return tenants specific to user
-            dtenants = api.TENANT.tenants_for_user_get_page(
-                user, marker, limit)
-            prev_page, next_page = api.TENANT.\
-                tenants_for_user_get_page_markers(user, marker, limit)
+            if scope is None or \
+                ((scope and default_tenant) and (scope == default_tenant)):
+                # Return all tenants specific to user if token has no scope
+                # or if token is scoped to a default tenant
+                dtenants = api.TENANT.tenants_for_user_get_page(
+                    user, marker, limit)
+                prev_page, next_page = api.TENANT.\
+                    tenants_for_user_get_page_markers(user, marker, limit)
+            else:
+                # Return scoped tenant only
+                dtenants = [api.TENANT.get(scope or default_tenant)]
+                prev_page = 2
+                next_page = None
+                limit = 10
         else:
             #Check Admin Token
             (_token, user) = validate_admin_token(admin_token)
@@ -552,7 +563,7 @@ class IdentityService(object):
         dtenant = api.TENANT.get_by_name(tenant_name)
         if not dtenant:
             raise fault.ItemNotFoundFault("The tenant could not be found")
-        return Tenant(dtenant.id, dtenant.name, dtenant.desc, dtenant.enabled)
+        return dtenant
 
     @staticmethod
     def update_tenant(admin_token, tenant_id, tenant):
@@ -844,19 +855,28 @@ class IdentityService(object):
 
     def get_roles(self, admin_token, marker, limit, url):
         validate_service_admin_token(admin_token)
-
-        ts = []
         droles = api.ROLE.get_page(marker, limit)
-        for drole in droles:
-            ts.append(Role(drole.id, drole.name, drole.desc, drole.service_id))
         prev, next = api.ROLE.get_page_markers(marker, limit)
         links = self.get_links(url, prev, next, limit)
+        ts = self.transform_roles(droles)
         return Roles(ts, links)
+
+    def get_roles_by_service(self, admin_token, marker, limit, url, serviceId):
+        validate_service_admin_token(admin_token)
+        droles = api.ROLE.get_by_service_get_page(serviceId, marker, limit)
+        prev, next = api.ROLE.get_by_service_get_page_markers(
+            serviceId, marker, limit)
+        links = self.get_links(url, prev, next, limit)
+        ts = self.transform_roles(droles)
+        return Roles(ts, links)
+
+    def transform_roles(self, droles):
+        return [Role(drole.id, drole.name, drole.desc, drole.service_id)
+                for drole in droles]
 
     @staticmethod
     def get_role(admin_token, role_id):
         validate_service_admin_token(admin_token)
-
         drole = api.ROLE.get(role_id)
         if not drole:
             raise fault.ItemNotFoundFault("The role could not be found")
@@ -869,7 +889,8 @@ class IdentityService(object):
         drole = api.ROLE.get_by_name(role_name)
         if not drole:
             raise fault.ItemNotFoundFault("The role could not be found")
-        return Role(drole.id, drole.name, drole.desc, drole.service_id)
+        return Role(drole.id, drole.name,
+            drole.desc, drole.service_id)
 
     @staticmethod
     def delete_role(admin_token, role_id):
