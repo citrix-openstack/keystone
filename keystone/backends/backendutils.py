@@ -1,11 +1,18 @@
+import logging
+logger = logging.getLogger(__name__)  # pylint: disable=C0103
+
 from keystone.backends import models
 import keystone.backends as backends
 # pylint: disable=E0611
-from passlib.hash import sha512_crypt as sc
+try:
+    from passlib.hash import sha512_crypt as sc
+except ImportError as exc:
+    logger.exception(exc)
+    raise exc
 
 
 def __get_hashed_password(password):
-    if password != None and len(password) > 0:
+    if password:
         return __make_password(password)
     else:
         return None
@@ -16,10 +23,13 @@ def set_hashed_password(values):
     Sets hashed password for password.
     """
     if backends.SHOULD_HASH_PASSWORD:
-        if type(values) is dict and 'password' in values.keys():
+        if isinstance(values, dict) and 'password' in values.keys():
             values['password'] = __get_hashed_password(values['password'])
-        elif type(values) is models.User:
+        elif isinstance(values, models.User):
             values.password = __get_hashed_password(values.password)
+        else:
+            logger.warn("Could not hash password on unsupported type: %s" %
+                        type(values))
 
 
 def check_password(raw_password, enc_password):

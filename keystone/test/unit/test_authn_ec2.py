@@ -23,7 +23,7 @@ from keystone.test.unit.decorators import jsonify
 from keystone.logic import signer
 from keystone.logic.types import auth
 
-LOGGER = logging.getLogger('test.unit.test_ec2_authn')
+LOGGER = logging.getLogger(__name__)
 
 
 class EC2AuthnMethods(base.ServiceAPITest):
@@ -75,7 +75,9 @@ class EC2AuthnMethods(base.ServiceAPITest):
                 u'user': {
                     u'id': unicode(self.auth_user['id']),
                     u'name': self.auth_user['name'],
-                    u'roles': []}}}
+                    u'roles': [{u'description': u'regular role',
+                        u'id': u'0',
+                        u'name': u'regular_role'}]}}}
 
         self.assert_dict_equal(expected, json.loads(self.res.body))
         self.status_ok()

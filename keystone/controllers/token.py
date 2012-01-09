@@ -23,13 +23,17 @@ This module contains the TokenController class which receives token-related
 calls from the request routers.
 
 """
+import logging
 
 from keystone import utils
 from keystone.common import wsgi
+from keystone.logic import extension_reader
 from keystone.logic.types import auth
 from keystone.logic.types import fault
 from keystone.logic import service
 from . import get_marker_limit_and_url
+
+logger = logging.getLogger(__name__)  # pylint: disable=C0103
 
 
 class TokenController(wsgi.Controller):
@@ -38,6 +42,8 @@ class TokenController(wsgi.Controller):
     def __init__(self, options):
         self.options = options
         self.identity_service = service.IdentityService(options)
+        logger.debug("Token controller init with HP-IDM extension: %s" % \
+                extension_reader.is_extension_supported(self.options, 'hpidm'))
 
     @utils.wrap_error
     def authenticate(self, req):
@@ -68,8 +74,12 @@ class TokenController(wsgi.Controller):
     def _validate_token(self, req, token_id):
         """Validates the token, and that it belongs to the specified tenant"""
         belongs_to = req.GET.get('belongsTo')
+        service_ids = None
+        if extension_reader.is_extension_supported(self.options, 'hpidm'):
+            # service IDs are only relevant if hpidm extension is enabled
+            service_ids = req.GET.get('HP-IDM-serviceId')
         return self.identity_service.validate_token(
-            utils.get_auth_token(req), token_id, belongs_to)
+            utils.get_auth_token(req), token_id, belongs_to, service_ids)
 
     @utils.wrap_error
     def validate_token(self, req, token_id):

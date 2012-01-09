@@ -52,9 +52,9 @@ class TestModelsTenant(unittest.TestCase):
         json_str = tenant.to_json()
 
         d1 = json.loads(json_str)
-        d2 = json.loads('{"tenant": {"name": "the tenant", \
-                          "id": "3", "enabled": true, "dynamic": "test"}}')
-        self.assertEquals(d1, d2)
+        d2 = {"tenant": {"name": "the tenant", "id": "3", "enabled": True,
+                         "dynamic": "test"}}
+        self.assertDictEqual(d1, d2)
 
     def test_tenant_xml_serialization(self):
         tenant = Tenant(id=4, name="the tenant", description="X", blank=None)
@@ -64,6 +64,29 @@ class TestModelsTenant(unittest.TestCase):
                         xmlns="http://docs.openstack.org/identity/api/v2.0" \
                         id="4" name="the tenant">\
                         <description>X</description></tenant>'))
+
+    def test_resource_json_serialization_mapping(self):
+        tenant = Tenant(id=1, name="the tenant", rolegrant_id=12)
+        json_str = tenant.to_json(hints={"maps": {"refId": "rolegrant_id", }})
+        d1 = json.loads(json_str)
+        d2 = {"tenant": {"name": "the tenant", "id": "1", "refId": 12}}
+        self.assertDictEqual(d1, d2)
+
+    def test_tenant_json_serialization_types(self):
+        tenant = Tenant(id=1, name="the tenant", bool=True, int=5)
+        json_str = tenant.to_json(hints={"types":
+            [("bool", bool), ("int", int)]})
+        d1 = json.loads(json_str)
+        d2 = {"tenant": {"name": "the tenant", "id": "1", "bool": True,
+                         "int": 5}}
+        self.assertDictEqual(d1, d2)
+
+    def test_tenant_xml_serialization_mapping(self):
+        tenant = Tenant(id=1, name="the resource", rolegrant_id=12)
+        xml_str = tenant.to_xml(hints={"maps": {"refId": "rolegrant_id", }})
+        self.assertTrue(testutils.XMLTools.xmlEqual(xml_str,
+            '<tenant xmlns="http://docs.openstack.org/identity/api/v2.0"\
+                    id="1" name="the resource" refId="12"></tenant>'))
 
     def test_tenant_json_deserialization(self):
         tenant = Tenant.from_json('{"tenant": {"name": "the tenant",\
@@ -99,7 +122,7 @@ class TestModelsTenant(unittest.TestCase):
 
     def test_tenant_inspection(self):
         tenant = Tenant(id=8, name="the tenant", blank=None)
-        self.assertIsNone(tenant.inspect())
+        self.assertFalse(tenant.inspect())
 
     def test_tenant_validation(self):
         tenant = Tenant(id=9, name="the tenant", blank=None)
@@ -129,14 +152,14 @@ class TestModelsTenant(unittest.TestCase):
             'Description initialized to empty string should be empty string')
         xml = tenant.to_dom()
         desc = xml.find("description")
-        self.assertEquals(desc.text, None,
-                          "Blank Description should show as empty tag in xml")
+        self.assertEquals(desc.text, '',
+                          "Blank Description should show as blank tag in xml")
 
         tenant = Tenant(id=10, name="the tenant", description=None)
         xml = tenant.to_xml(hints={"tags": ["description"]})
         xml = tenant.to_dom()
         desc = xml.find("description")
-        self.assertEquals(desc.text, None,
+        self.assertEquals(desc, None,
                           "'None' Description should show as empty tag in xml")
 
 

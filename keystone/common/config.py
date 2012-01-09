@@ -85,7 +85,7 @@ for a config file.""")
                      dest="bind_port",
                      help="specifies port to listen on")
     group.add_option('--host', '--bind-host',
-                     default="0.0.0.0", dest="bind_host",
+                     default=None, dest="bind_host",
                      help="specifies host address to listen on "\
                             "(default is all or 0.0.0.0)")
     # This one is handled by keystone/tools/tracer.py (if loaded)
@@ -280,7 +280,7 @@ def get_non_paste_configs(conf_file):
     complete_conf = load_config_files(conf_file)
     #Add Non Paste global sections.Need to find a better way.
     global_conf = {}
-    if complete_conf != None:
+    if complete_conf is not None:
         for section in complete_conf.sections():
             if not (section.startswith('filter:') or \
                     section.startswith('app:') or \

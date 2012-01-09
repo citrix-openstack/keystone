@@ -27,7 +27,7 @@ class ValidateToken(common.FunctionalTestCase):
         self.user = self.create_user_with_known_password(
             tenant_id=self.tenant['id']).json['user']
         self.role = self.create_role().json['role']
-        self.role_ref = self.grant_role_to_user(self.user['id'],
+        self.rolegrant = self.grant_role_to_user(self.user['id'],
             self.role['id'], self.tenant['id'])
         self.token = self.authenticate(self.user['name'],
             self.user['password'], self.tenant['id']).json['access']['token']
@@ -35,7 +35,6 @@ class ValidateToken(common.FunctionalTestCase):
     def test_validate_token_true(self):
         r = self.get_token_belongsto(self.token['id'], self.tenant['id'],
             assert_status=200)
-
         self.assertIsNotNone(r.json['access']['user']["roles"])
         self.assertEqual(r.json['access']['user']["roles"][0]['id'],
             self.role['id'])
@@ -44,6 +43,7 @@ class ValidateToken(common.FunctionalTestCase):
         self.assertIsNotNone(r.json['access']['user']['id'], self.user['id'])
         self.assertIsNotNone(r.json['access']['user']['name'],
             self.user['name'])
+        self.assertIn('tenants', r.json['access']['token'])
 
     def test_validate_token_true_using_service_token(self):
         self.fixture_create_service_admin()

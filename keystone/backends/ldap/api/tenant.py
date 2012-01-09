@@ -41,7 +41,7 @@ class TenantAPI(BaseLdapAPI, BaseTenantAPI):  # pylint: disable=W0223
         query = '(member=%s)' % (user_dn,)
         memberships = self.get_all(query)
         if include_roles:
-            roles = self.api.role.ref_get_all_tenant_roles(user_id)
+            roles = self.api.role.list_tenant_roles_for_user(user_id)
             for role in roles:
                 exists = False
                 for tenant in memberships:
@@ -52,10 +52,10 @@ class TenantAPI(BaseLdapAPI, BaseTenantAPI):  # pylint: disable=W0223
                     memberships.append(self.get(role.tenant_id))
         return memberships
 
-    def tenants_for_user_get_page(self, user, marker, limit):
+    def list_for_user_get_page(self, user, marker, limit):
         return self._get_page(marker, limit, self.get_user_tenants(user.id))
 
-    def tenants_for_user_get_page_markers(self, user, marker, limit):
+    def list_for_user_get_page_markers(self, user, marker, limit):
         return self._get_page_markers(marker, limit,
                         self.get_user_tenants(user.id))
 
@@ -93,11 +93,17 @@ class TenantAPI(BaseLdapAPI, BaseTenantAPI):  # pylint: disable=W0223
                     continue
                 #pylint: disable=W0212
                 res.append(self.api.user.get(self.api.user._dn_to_id(user_dn)))
-        role_refs = self.api.role.get_role_assignments(tenant_id)
+        rolegrants = self.api.role.get_role_assignments(tenant_id)
         # Get users who are explicitly mapped via a tenant
-        for role_ref in role_refs:
-            if role_id is None or role_ref.role_id == role_id:
-                res.append(self.api.user.get(role_ref.user_id))
+        for rolegrant in rolegrants:
+            if role_id is None or rolegrant.role_id == role_id:
+                res.append(self.api.user.get(rolegrant.user_id))
         return res
 
     add_redirects(locals(), SQLTenantAPI, ['get_all_endpoints'])
+
+    def delete(self, id):
+        if not self.is_empty(id):
+            raise fault.ForbiddenFault("You may not delete a tenant that "
+                                       "contains users")
+        super(TenantAPI, self).delete(id)

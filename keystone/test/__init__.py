@@ -46,7 +46,6 @@
 """ Module that handles starting the Keystone server and running
 test suites"""
 
-import cgitb
 import heapq
 import logging
 from nose import config as noseconfig
@@ -58,7 +57,6 @@ import sys
 import tempfile
 import time
 import unittest
-cgitb.enable(format="text")
 
 import keystone
 import keystone.server
@@ -71,7 +69,7 @@ TEST_DIR = os.path.abspath(os.path.dirname(__file__))
 BASE_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir, os.pardir))
 TEST_CERT = os.path.join(BASE_DIR, 'examples/ssl/certs/middleware-key.pem')
 
-logger = logging.getLogger('test')
+logger = logging.getLogger(__name__)
 
 
 class _AnsiColorizer(object):
@@ -353,6 +351,7 @@ class KeystoneTest(object):
     """
     config_params = {'test_dir': TEST_DIR, 'base_dir': BASE_DIR}
     isSsl = False
+    hpidmDisabled = False
     config_name = None
     test_files = None
     server = None
@@ -369,7 +368,7 @@ class KeystoneTest(object):
                           os.path.join(TEST_DIR, fname)]
                 for fpath in paths:
                     if os.path.exists(fpath):
-                        print "Removing test file %s" % fname
+                        logger.debug("Removing test file %s" % fname)
                         os.unlink(fpath)
 
     def construct_temp_conf_file(self):
@@ -377,11 +376,18 @@ class KeystoneTest(object):
         template_fpath = os.path.join(TEST_DIR, 'etc', self.config_name)
         conf_contents = open(template_fpath).read()
         self.config_params['service_port'] = utils.get_unused_port()
+        logger.debug("Assigned port %s to service" %
+                     self.config_params['service_port'])
         self.config_params['admin_port'] = utils.get_unused_port()
+        logger.debug("Assigned port %s to admin" %
+                     self.config_params['admin_port'])
+
         conf_contents = conf_contents % self.config_params
         self.conf_fp = tempfile.NamedTemporaryFile()
         self.conf_fp.write(conf_contents)
         self.conf_fp.flush()
+        logger.debug("Create test configuration file: %s" % self.conf_fp.name)
+        client_tests.TEST_CONFIG_FILE_NAME = self.conf_fp.name
 
     def setUp(self):
         pass
@@ -391,17 +397,37 @@ class KeystoneTest(object):
         self.server = None
         self.admin_server = None
 
-        self.clear_database()
         self.construct_temp_conf_file()
 
         # Set client certificate for test client
-        if (self.isSsl == True):
+        if self.isSsl:
+            logger.debug("SSL testing will use cert_file %s" % TEST_CERT)
             os.environ['cert_file'] = TEST_CERT
+        else:
+            if 'cert_file' in os.environ:
+                del os.environ['cert_file']
+
+        # indicating HP-IDM is disabled
+        if self.hpidmDisabled:
+            logger.debug("HP-IDM extensions is disabled")
+            os.environ['HP-IDM_Disabled'] = 'True'
+        else:
+            if 'HP-IDM_Disabled' in os.environ:
+                del os.environ['HP-IDM_Disabled']
 
         # run the keystone server
         logger.info("Starting the keystone server...")
 
-        parser = optparse.OptionParser(version='%%prog %s' %
+        class SilentOptParser(optparse.OptionParser):
+            """ Class used to prevent OptionParser from exiting when it detects
+            options coming in for nose/testing """
+            def exit():
+                pass
+
+            def error(self, msg):
+                pass
+
+        parser = SilentOptParser(version='%%prog %s' %
                                        keystone.version.version())
         common_group = config.add_common_options(parser)
         config.add_log_options(parser)
@@ -430,7 +456,8 @@ class KeystoneTest(object):
             client_tests.TEST_TARGET_SERVER_SERVICE_PORT = service.port
 
         except RuntimeError, e:
-            sys.exit("ERROR: %s" % e)
+            logger.exception(e)
+            raise e
 
         try:
             # Load Admin API server
@@ -450,8 +477,8 @@ class KeystoneTest(object):
             client_tests.TEST_TARGET_SERVER_ADMIN_PORT = admin.port
 
         except RuntimeError, e:
-            service.stop()
-            sys.exit("ERROR: %s" % e)
+            logger.exception(e)
+            raise e
 
         self.server = service
         self.admin_server = admin
@@ -476,36 +503,41 @@ class KeystoneTest(object):
             manage.process(*cmd)
 
     def tearDown(self):
-        # kill the keystone server
-        print "Stopping the keystone server..."
         try:
             if self.server is not None:
+                print "Stopping the Service API..."
                 self.server.stop()
                 self.server = None
             if self.admin_server is not None:
+                print "Stopping the Admin API..."
                 self.admin_server.stop()
                 self.admin_server = None
             if self.conf_fp:
                 self.conf_fp.close()
                 self.conf_fp = None
         except Exception as e:
+            logger.exception(e)
             print "Error cleaning up %s" % e
+            raise e
         finally:
             self.clear_database()
+            if 'cert_file' in os.environ:
+                del os.environ['cert_file']
+            if 'HP-IDM_Disabled' in os.environ:
+                del os.environ['HP-IDM_Disabled']
+            reload(client_tests)
 
     def run(self, args=None):
         try:
+            print 'Running test suite: %s' % self.__class__.__name__
+
             self.setUp()
 
             # discover and run tests
-            # TODO(zns): check if we still need a verbosity flag
-            verbosity = 1
-            if '--verbose' in sys.argv:
-                verbosity = 2
 
             # If any argument looks like a test name but doesn't have
-            # "nova.tests" in front of it, automatically add that so we don't
-            # have to type as much
+            # "keystone.test" in front of it, automatically add that so we
+            # don't have to type as much
             show_elapsed = True
             argv = []
             if args is None:
@@ -517,10 +549,6 @@ class KeystoneTest(object):
                     has_base = True
                 elif x.startswith('--hide-elapsed'):
                     show_elapsed = False
-                elif x.startswith('--trace-calls'):
-                    pass
-                elif x.startswith('--debug'):
-                    pass
                 elif x.startswith('-'):
                     argv.append(x)
                 else:
@@ -530,20 +558,26 @@ class KeystoneTest(object):
 
             if not has_base and self.directory_base is not None:
                 argv.append(self.directory_base)
+            argv = ['--no-path-adjustment'] + argv[1:]
+            logger.debug("Running set of tests with args=%s" % argv)
 
             c = noseconfig.Config(stream=sys.stdout,
                               env=os.environ,
                               verbosity=3,
                               workingDir=TEST_DIR,
-                              plugins=core.DefaultPluginManager())
+                              plugins=core.DefaultPluginManager(),
+                              args=argv)
 
             runner = NovaTestRunner(stream=c.stream,
                                     verbosity=c.verbosity,
                                     config=c,
                                     show_elapsed=show_elapsed)
 
-            return not core.run(config=c, testRunner=runner,
-                                argv=argv + ['--no-path-adjustment'])
+            result = not core.run(config=c, testRunner=runner, argv=argv)
+            return int(result)  # convert to values applicable to sys.exit()
+        except Exception, exc:
+            logger.exception(exc)
+            raise exc
         finally:
             self.tearDown()
 
@@ -567,14 +601,11 @@ class UnitTests(KeystoneTest):
         scoped_to_unit = False
         for x in sys.argv:
             if x.startswith(('functional', 'client')):
-                pass
+                # Skip, since we're not running unit tests
+                return
             elif x.startswith('unit'):
                 argv.append('keystone.test.%s' % x)
                 scoped_to_unit = True
-            elif x.startswith('--trace-calls'):
-                pass
-            elif x.startswith('--debug'):
-                pass
             else:
                 argv.append(x)
 
@@ -604,14 +635,11 @@ class ClientTests(KeystoneTest):
         scoped_to_client = False
         for x in sys.argv:
             if x.startswith(('functional', 'unit')):
-                pass
+                # Skip, since we're not running client tests
+                return
             elif x.startswith('client'):
                 argv.append('keystone.test.%s' % x)
                 scoped_to_client = True
-            elif x.startswith('--trace-calls'):
-                pass
-            elif x.startswith('--debug'):
-                pass
             else:
                 argv.append(x)
 
@@ -628,6 +656,29 @@ class SQLTest(KeystoneTest):
     config_name = 'sql.conf.template'
     test_files = ('keystone.sqltest.db',)
     directory_base = 'functional'
+
+    def run(self):
+        """ Run client tests
+
+        Filters arguments and leaves only ones relevant to client tests
+        """
+
+        argv = []
+        scoped_to_functional = False
+        for x in sys.argv:
+            if x.startswith(('client', 'unit')):
+                # Skip, since we're not running functional tests
+                return
+            elif x.startswith('functional'):
+                argv.append('keystone.test.%s' % x)
+                scoped_to_functional = True
+            else:
+                argv.append(x)
+
+        if not scoped_to_functional:
+            argv.append('keystone.test.functional')
+
+        return super(SQLTest, self).run(args=argv)
 
     def clear_database(self):
         # Disconnect the database before deleting
@@ -659,3 +710,10 @@ class LDAPTest(SQLTest):
         from keystone.backends.ldap.fakeldap import FakeShelve
         db = FakeShelve().get_instance()
         db.clear()
+
+
+class ClientWithoutHPIDMTest(ClientTests):
+    """Test with HP-IDM disabled to make sure it is backward compatible"""
+    config_name = 'sql_no_hpidm.conf.template'
+    hpidmDisabled = True
+    test_files = ('keystone.nohpidm.db',)
