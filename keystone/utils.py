@@ -16,7 +16,9 @@
 
 
 import functools
+import json
 import logging
+from lxml import etree
 import os
 import sys
 from webob import Response
@@ -93,11 +95,59 @@ def get_normalized_request_content(model, req):
                                   code=415)
 
 
+def detect_credential_type(req):
+    """Return the credential type name by detecting them in json/xml body"""
+
+    if req.content_type == "application/xml":
+        dom = etree.Element("root")
+        dom.append(etree.fromstring(req.body))
+        root = dom.find("{http://docs.openstack.org/identity/api/v2.0}"
+                        "auth")
+        if root is None:
+            # Try legacy without wrapper
+            creds = dom.find("*")
+            if creds:
+                logger.warning("Received old syntax credentials not wrapped in"
+                               "'auth'")
+        else:
+            creds = root.find("*")
+
+        if creds is None:
+            raise fault.BadRequestFault("Request is missing credentials")
+
+        name = creds.tag
+        if "}" in name:
+            #trim away namespace if it is there
+            name = name[name.rfind("}") + 1:]
+
+        return name
+    elif req.content_type == "application/json":
+        obj = json.loads(req.body)
+        if len(obj) == 0:
+            raise fault.BadRequestFault("Expecting 'auth'")
+        tag = obj.keys()[0]
+        if tag == "auth":
+            if len(obj[tag]) == 0:
+                raise fault.BadRequestFault("Expecting Credentials")
+            for key, value in obj[tag].iteritems():
+                if key not in ['tenantId', 'tenantName']:
+                    return key
+            raise fault.BadRequestFault("Credentials missing from request")
+        else:
+            credentials_type = tag
+        return credentials_type
+    else:
+        logging.debug("Unsupported content-type passed: %s" % req.content_type)
+        raise fault.IdentityFault("I don't understand the content type",
+                                  code=415)
+
+
 def send_error(code, req, result):
     content = None
 
     resp = Response()
     resp.headers['content-type'] = None
+    resp.headers['Vary'] = 'X-Auth-Token'
     resp.status = code
 
     if result:
@@ -119,6 +169,7 @@ def send_result(code, req, result=None):
 
     resp = Response()
     resp.headers['content-type'] = None
+    resp.headers['Vary'] = 'X-Auth-Token'
     resp.status = code
     if code > 399:
         return resp
@@ -140,6 +191,8 @@ def send_legacy_result(code, headers):
     resp = Response()
     if 'content-type' not in headers:
         headers['content-type'] = "text/plain"
+
+    headers['Vary'] = 'X-Auth-Token'
 
     resp.headers = headers
     resp.status = code

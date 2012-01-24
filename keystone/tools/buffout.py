@@ -23,8 +23,6 @@ class OutputBuffer():
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is None:
             self.stop()
-        else:
-            raise exc_type, exc_value, traceback
 
     def __unicode__(self):
         return self._contents
@@ -68,6 +66,14 @@ class OutputBuffer():
         self._buffer = StringIO.StringIO()
         sys.stdout = self._buffer
 
+    def flush(self):
+        """Flushes and clears the current buffer contents"""
+        assert self.buffering
+
+        self.old_stdout.write(self._contents)
+        self._contents = ''
+        self._buffer = StringIO.StringIO()
+
     def stop(self):
         """Stop buffering and pass the output along"""
         assert self.buffering
@@ -77,7 +83,7 @@ class OutputBuffer():
         self._buffer.close()
 
         sys.stdout = self.old_stdout
-        print self
+        print self.__unicode__()
         self.buffering = False
 
         return unicode(self)

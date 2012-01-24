@@ -25,6 +25,34 @@ class ServiceAPI(api.BaseServiceAPI):
     def __init__(self, *args, **kw):
         super(ServiceAPI, self).__init__(*args, **kw)
 
+    # pylint: disable=W0221
+    @staticmethod
+    def transpose(values):
+        """ Handles transposing field names from Keystone model to
+        sqlalchemy mode
+
+        Differences:
+            desc <-> description
+            id <-> uid (coming soon)
+        """
+        if 'description' in values:
+            values['desc'] = values.pop('description')
+
+    @staticmethod
+    def from_model(ref):
+        """ Returns SQLAlchemy model object based on Keystone model"""
+        if ref:
+            result = models.Service()
+            try:
+                result.id = int(ref.id)
+            except (AttributeError, TypeError):
+                # Unspecified or invalid ID -- ignore it.
+                pass
+            result.update(ref)
+            if hasattr(ref, 'description'):
+                result.desc = ref.description
+            return result
+
     @staticmethod
     def from_model(ref):
         """ Returns SQLAlchemy model object based on Keystone model"""
@@ -56,6 +84,19 @@ class ServiceAPI(api.BaseServiceAPI):
         service_ref = ServiceAPI.from_model(values)
         service_ref.save()
         return ServiceAPI.to_model(service_ref)
+
+    @staticmethod
+    def update(id, values, session=None):
+        if not session:
+            session = get_session()
+
+        ServiceAPI.transpose(values)
+
+        with session.begin():
+            service_ref = session.query(models.Service).filter_by(id=id).\
+                    first()
+            service_ref.update(values)
+            service_ref.save(session=session)
 
     def get(self, id, session=None):
         if not session:
@@ -89,12 +130,14 @@ class ServiceAPI(api.BaseServiceAPI):
         if marker:
             return session.query(models.Service).filter("id>:marker").params(\
                     marker='%s' % marker).order_by(\
-                    models.Service.id.desc()).limit(limit).all()
+                    models.Service.id.desc()).limit(int(limit)).all()
         else:
-            return session.query(models.Service).order_by(\
-                                models.Service.id.desc()).limit(limit).all()
+            return session.query(models.Service).order_by(
+                                models.Service.id.desc()).limit(
+                                        int(limit)).all()
 
-    def get_page_markers(self, marker, limit, session=None):
+    @staticmethod
+    def get_page_markers(marker, limit, session=None):
         if not session:
             session = get_session()
         first = session.query(models.Service).order_by(\
@@ -108,7 +151,7 @@ class ServiceAPI(api.BaseServiceAPI):
         next_page = session.query(models.Service).\
                         filter("id > :marker").params(\
                         marker='%s' % marker).order_by(\
-                        models.Service.id).limit(limit).all()
+                        models.Service.id).limit(int(limit)).all()
         prev_page = session.query(models.Service).\
                         filter("id < :marker").params(\
                         marker='%s' % marker).order_by(\
