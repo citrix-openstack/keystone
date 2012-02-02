@@ -32,6 +32,9 @@ from nova import wsgi
 
 
 FLAGS = flags.FLAGS
+flags.DEFINE_string('keystone_ec2_url',
+                    'http://localhost:5000/v2.0/ec2tokens',
+                    'URL to get token from ec2 request.')
 
 
 class EC2Token(wsgi.Middleware):
