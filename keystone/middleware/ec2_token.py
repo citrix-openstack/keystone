@@ -33,9 +33,6 @@ from nova import wsgi
 logger = logging.getLogger(__name__)  # pylint: disable=C0103
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('keystone_ec2_url',
-                    'http://localhost:5000/v2.0/tokens',
-                    'URL to get token from ec2 request.')
 
 
 class EC2Token(wsgi.Middleware):
